@@ -290,10 +290,22 @@ function launch(port) {
     { detached: false, stdio: 'ignore' },
   )
   appWindowPid = child.pid
+  const spawnedAt = Date.now()
   // Resolve the window handle a moment later (once the window exists) for the picker.
   setTimeout(() => resolveAppHwnd(), 2500)
   // When the app window closes, Edge (with its own profile) exits — so do we.
-  child.on('exit', () => process.exit(0))
+  // BUT: if our Edge process exits almost immediately, Edge handed the window off to an
+  // already-running Notes instance (same profile) rather than actually closing. In that
+  // case we must keep serving, or the handed-off window would hit a dead server
+  // ("127.0.0.1 refused to connect"). The real window still drives shutdown via /api/bye
+  // (and /api/ping keeps us aware it's alive) when the user closes it.
+  child.on('exit', () => {
+    if (Date.now() - spawnedAt < 4000) {
+      console.error('Edge handed the window to an existing Notes instance; keeping the server alive.')
+      return
+    }
+    process.exit(0)
+  })
 }
 
 if (process.env.NOTES_NO_LAUNCH) {
